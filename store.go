@@ -27,7 +27,8 @@ type ifaceWords struct {
 var firstStoreInProgress byte
 
 var (
-	nilAny = new(any)
+	nilAny   = new(any)
+	nilIface = (*ifaceWords)(unsafe.Pointer(nilAny))
 )
 
 // Load returns the value set by the most recent Store.
@@ -39,16 +40,19 @@ func (e *Entry) Load() (val any) {
 		// First store not yet completed.
 		return nil
 	}
-	// check val if nilAny
-	iv := *(*interface{})(unsafe.Pointer(vp))
-	if iv == nilAny {
-		return nil
-	}
+	// // BUG data race check val if nilAny
+	// iv := *(*interface{})(unsafe.Pointer(vp))
+	// if iv == nilAny {
+	// 	return nil
+	// }
 	// load val
 	data := atomic.LoadPointer(&vp.data)
 	vlp := (*ifaceWords)(unsafe.Pointer(&val))
 	vlp.typ = typ
 	vlp.data = data
+	if vlp.typ == nilIface.typ && vlp.data == nilIface.data {
+		return nil
+	}
 	return
 }
 
