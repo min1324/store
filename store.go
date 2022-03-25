@@ -122,9 +122,6 @@ func (e *Entry) Swap(new any) (old any) {
 			continue
 		}
 		// First store completed. Check type and overwrite data.
-		// if typ != np.typ {
-		// 	panic("sync/atomic: swap of inconsistently typed value into Value")
-		// }
 		op := (*ifaceWords)(unsafe.Pointer(&old))
 		op.typ, op.data = np.typ, atomic.SwapPointer(&vp.data, np.data)
 		return old
@@ -172,9 +169,6 @@ func (e *Entry) CompareAndSwap(old, new any) (swapped bool) {
 			continue
 		}
 		// First store completed. Check type and overwrite data.
-		// if typ != np.typ {
-		// 	panic("sync/atomic: compare and swap of inconsistently typed value into Value")
-		// }
 		// Compare old and current via runtime equality check.
 		// This allows value types to be compared, something
 		// not offered by the package functions.

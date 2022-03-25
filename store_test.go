@@ -192,10 +192,10 @@ func TestValueSwapConcurrent(t *testing.T) {
 	var v store.Entry
 	var count uint64
 	var g sync.WaitGroup
-	var m, n uint64 = 10000, 10000
+	var m, n uint64 = 1000, 1000
 	if testing.Short() {
-		m = 1000
-		n = 1000
+		m = 100
+		n = 100
 	}
 	for i := uint64(0); i < m*n; i += n {
 		i := i
@@ -263,10 +263,10 @@ func TestValueCompareAndSwapConcurrent(t *testing.T) {
 	var v store.Entry
 	var w sync.WaitGroup
 	v.Store(0)
-	m, n := 1000, 100
+	m, n := 100, 10
 	if testing.Short() {
-		m = 100
-		n = 100
+		m = 10
+		n = 10
 	}
 	for i := 0; i < m; i++ {
 		i := i
