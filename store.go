@@ -24,19 +24,14 @@ type ifaceWords struct {
 	data unsafe.Pointer
 }
 
-var firstStoreInProgress byte
-
-var (
-	nilAny   = new(any)
-	nilIface = (*ifaceWords)(unsafe.Pointer(nilAny))
-)
+var storeInProgress = unsafe.Pointer(new(any))
 
 // Load returns the value set by the most recent Store.
 // It returns nil if there has been no call to Store for this Value.
 func (e *Entry) Load() (val any) {
 	vp := (*ifaceWords)(unsafe.Pointer(e))
 	typ := atomic.LoadPointer(&vp.typ)
-	if typ == nil || typ == unsafe.Pointer(&firstStoreInProgress) {
+	if typ == nil || typ == storeInProgress {
 		// First store not yet completed.
 		return nil
 	}
@@ -44,9 +39,7 @@ func (e *Entry) Load() (val any) {
 	vlp := (*ifaceWords)(unsafe.Pointer(&val))
 	vlp.typ = typ
 	vlp.data = data
-	if val == nilAny {
-		return nil
-	}
+
 	return
 }
 
@@ -54,19 +47,13 @@ func (e *Entry) Load() (val any) {
 // All calls to Store for a given Value must use values of the same concrete type.
 // Store of an inconsistent type panics, as does Store(nil).
 func (e *Entry) Store(val any) {
-	if val == nil {
-		val = nilAny
-	}
 	vp := (*ifaceWords)(unsafe.Pointer(e))
 	vlp := (*ifaceWords)(unsafe.Pointer(&val))
 	for {
 		typ := atomic.LoadPointer(&vp.typ)
 		if typ == nil {
-			// Attempt to start first store.
-			// Disable preemption so that other goroutines can use
-			// active spin wait to wait for completion.
 			runtime_procPin()
-			if !atomic.CompareAndSwapPointer(&vp.typ, nil, unsafe.Pointer(&firstStoreInProgress)) {
+			if !atomic.CompareAndSwapPointer(&vp.typ, nil, storeInProgress) {
 				runtime_procUnpin()
 				continue
 			}
@@ -76,15 +63,13 @@ func (e *Entry) Store(val any) {
 			runtime_procUnpin()
 			return
 		}
-		if typ == unsafe.Pointer(&firstStoreInProgress) {
-			// First store in progress. Wait.
-			// Since we disable preemption around the first store,
-			// we can wait with active spinning.
+		if typ == storeInProgress {
 			continue
 		}
-		// First store completed. Check type and overwrite data.
+		runtime_procPin()
 		atomic.StorePointer(&vp.data, vlp.data)
 		atomic.StorePointer(&vp.typ, vlp.typ)
+		runtime_procUnpin()
 		return
 	}
 }
@@ -99,31 +84,19 @@ func (e *Entry) Swap(new any) (old any) {
 	np := (*ifaceWords)(unsafe.Pointer(&new))
 	for {
 		typ := atomic.LoadPointer(&vp.typ)
-		if typ == nil {
-			// Attempt to start first store.
-			// Disable preemption so that other goroutines can use
-			// active spin wait to wait for completion; and so that
-			// GC does not see the fake type accidentally.
-			runtime_procPin()
-			if !atomic.CompareAndSwapPointer(&vp.typ, nil, unsafe.Pointer(^uintptr(0))) {
-				runtime_procUnpin()
-				continue
-			}
-			// Complete first store.
-			atomic.StorePointer(&vp.data, np.data)
-			atomic.StorePointer(&vp.typ, np.typ)
-			runtime_procUnpin()
-			return nil
-		}
-		if uintptr(typ) == ^uintptr(0) {
-			// First store in progress. Wait.
-			// Since we disable preemption around the first store,
-			// we can wait with active spinning.
+		if typ == storeInProgress {
 			continue
 		}
-		// First store completed. Check type and overwrite data.
+		runtime_procPin()
+		if !atomic.CompareAndSwapPointer(&vp.typ, typ, storeInProgress) {
+			runtime_procUnpin()
+			continue
+		}
 		op := (*ifaceWords)(unsafe.Pointer(&old))
-		op.typ, op.data = np.typ, atomic.SwapPointer(&vp.data, np.data)
+		atomic.StorePointer(&op.data, atomic.SwapPointer(&vp.data, np.data))
+		atomic.StorePointer(&op.typ, typ)
+		atomic.StorePointer(&vp.typ, np.typ)
+		runtime_procUnpin()
 		return old
 	}
 }
@@ -136,55 +109,33 @@ func (e *Entry) Swap(new any) (old any) {
 func (e *Entry) CompareAndSwap(old, new any) (swapped bool) {
 	vp := (*ifaceWords)(unsafe.Pointer(e))
 	np := (*ifaceWords)(unsafe.Pointer(&new))
-	// op := (*ifaceWords)(unsafe.Pointer(&old))
-	// if op.typ != nil && np.typ != op.typ {
-	// 	panic("sync/atomic: compare and swap of inconsistently typed values")
-	// }
 	for {
 		typ := atomic.LoadPointer(&vp.typ)
-		if typ == nil {
-			if old != nil {
-				return false
-			}
-
-			// Attempt to start first store.
-			// Disable preemption so that other goroutines can use
-			// active spin wait to wait for completion; and so that
-			// GC does not see the fake type accidentally.
-			runtime_procPin()
-			if !atomic.CompareAndSwapPointer(&vp.typ, nil, unsafe.Pointer(^uintptr(0))) {
-				runtime_procUnpin()
-				continue
-			}
-			// Complete first store.
-			atomic.StorePointer(&vp.data, np.data)
-			atomic.StorePointer(&vp.typ, np.typ)
-			runtime_procUnpin()
-			return true
-		}
-		if uintptr(typ) == ^uintptr(0) {
-			// First store in progress. Wait.
-			// Since we disable preemption around the first store,
-			// we can wait with active spinning.
+		if typ == storeInProgress {
 			continue
 		}
-		// First store completed. Check type and overwrite data.
-		// Compare old and current via runtime equality check.
-		// This allows value types to be compared, something
-		// not offered by the package functions.
-		// CompareAndSwapPointer below only ensures vp.data
-		// has not changed since LoadPointer.
+		runtime_procPin()
+		if !atomic.CompareAndSwapPointer(&vp.typ, typ, storeInProgress) {
+			runtime_procUnpin()
+			continue
+		}
 		data := atomic.LoadPointer(&vp.data)
 		var i any
 		(*ifaceWords)(unsafe.Pointer(&i)).typ = typ
 		(*ifaceWords)(unsafe.Pointer(&i)).data = data
 		if i != old {
+			// compare(init,old) not equal, restore typ
+			// atomic.CompareAndSwapPointer(&vp.typ, storeInProgress, typ)
+			atomic.StorePointer(&vp.typ, typ)
+			runtime_procUnpin()
 			return false
 		}
 		if atomic.CompareAndSwapPointer(&vp.data, data, np.data) {
 			atomic.StorePointer(&vp.typ, np.typ)
+			runtime_procUnpin()
 			return true
 		}
+		runtime_procUnpin()
 	}
 }
 

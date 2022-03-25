@@ -4,6 +4,7 @@ package store_test
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 import (
+	"fmt"
 	"math/rand"
 	"runtime"
 	"store"
@@ -29,15 +30,19 @@ func TestValue(t *testing.T) {
 	if xx := v.Load(); xx != nil {
 		t.Fatalf("wrong value nil: got %v, want nil", xx)
 	}
+
+	v.Store(42)
+	x := v.Load()
+	if xx, ok := x.(int); !ok || xx != 42 {
+		t.Fatalf("wrong value: got %+v, want 42", x)
+	}
 	var valueNil = unsafe.Pointer(new(interface{}))
 	v.Store(valueNil)
 	if xx := v.Load(); xx != valueNil {
 		t.Fatalf("wrong value vnil: got %+v, want %v", xx, valueNil)
 	}
-	v.Store(42)
-	x := v.Load()
-	if xx, ok := x.(int); !ok || xx != 42 {
-		t.Fatalf("wrong value: got %+v, want 42", x)
+	if xx := v.Load(); xx == nil {
+		t.Fatalf("wrong value vnil: got %+v, want %v", xx, valueNil)
 	}
 	v.Store(int64(84))
 	x = v.Load()
@@ -162,6 +167,15 @@ var Value_SwapTests = []struct {
 	{init: true, new: false, want: true, err: nil},
 }
 
+func Example_swap() {
+	var v store.Entry
+	v.Store(true)
+	fmt.Println(v.Swap(false))
+	fmt.Println(v.Swap(true))
+	// OutPut:true
+	// false
+}
+
 func TestValue_Swap(t *testing.T) {
 	for i, tt := range Value_SwapTests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -173,7 +187,7 @@ func TestValue_Swap(t *testing.T) {
 				err := recover()
 				switch {
 				case tt.err == nil && err != nil:
-					t.Errorf("should not panic, got %v", err)
+					t.Errorf("should not panic, got %v,new:%v", err, tt.new)
 				case tt.err != nil && err == nil:
 					t.Errorf("should panic %v, got <nil>", tt.err)
 				}
@@ -253,7 +267,7 @@ func TestValue_CompareAndSwap(t *testing.T) {
 				}
 			}()
 			if got := v.CompareAndSwap(tt.old, tt.new); got != tt.want {
-				t.Errorf("got %v, want %v", got, tt.want)
+				t.Errorf("got %v, want %v, init:%v,old:%v,new:%v", got, tt.want, tt.init, tt.old, tt.new)
 			}
 		})
 	}
