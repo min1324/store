@@ -40,17 +40,11 @@ func (e *Entry) Load() (val any) {
 		// First store not yet completed.
 		return nil
 	}
-	// // BUG data race check val if nilAny
-	// iv := *(*interface{})(unsafe.Pointer(vp))
-	// if iv == nilAny {
-	// 	return nil
-	// }
-	// load val
 	data := atomic.LoadPointer(&vp.data)
 	vlp := (*ifaceWords)(unsafe.Pointer(&val))
 	vlp.typ = typ
 	vlp.data = data
-	if vlp.typ == nilIface.typ && vlp.data == nilIface.data {
+	if val == nilAny {
 		return nil
 	}
 	return
