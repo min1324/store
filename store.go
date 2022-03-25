@@ -71,9 +71,11 @@ func (e *Entry) Store(val any) {
 			// we can wait with active spinning.
 			continue
 		}
-		// First store completed. Check type and overwrite data.
+		// First store completed. overwrite data.
+		runtime_procPin()
 		atomic.StorePointer(&vp.data, vlp.data)
 		atomic.StorePointer(&vp.typ, vlp.typ)
+		runtime_procUnpin()
 		return
 	}
 }

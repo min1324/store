@@ -233,6 +233,8 @@ var Value_CompareAndSwapTests = []struct {
 	{init: true, new: "", want: false, err: nil},
 	{init: true, new: true, old: false, want: false, err: nil},
 	{init: true, new: true, old: true, want: true, err: nil},
+	{init: 2, new: int64(2), old: 2, want: true, err: nil},
+	{init: 2, new: 2, old: int64(2), want: false, err: nil},
 	{init: heapA, new: struct{ uint }{1}, old: heapB, want: true, err: nil},
 }
 
@@ -263,7 +265,7 @@ func TestValueCompareAndSwapConcurrent(t *testing.T) {
 	var v store.Entry
 	var w sync.WaitGroup
 	v.Store(0)
-	m, n := 100, 10
+	m, n := 100, 100
 	if testing.Short() {
 		m = 10
 		n = 10
