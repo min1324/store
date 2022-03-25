@@ -34,15 +34,17 @@ var (
 // It returns nil if there has been no call to Store for this Value.
 func (e *Entry) Load() (val any) {
 	vp := (*ifaceWords)(unsafe.Pointer(e))
-	iv := *(*interface{})(unsafe.Pointer(vp))
-	if iv == nilAny {
-		return nil
-	}
 	typ := atomic.LoadPointer(&vp.typ)
 	if typ == nil || typ == unsafe.Pointer(&firstStoreInProgress) {
 		// First store not yet completed.
 		return nil
 	}
+	// check val if nilAny
+	iv := *(*interface{})(unsafe.Pointer(vp))
+	if iv == nilAny {
+		return nil
+	}
+	// load val
 	data := atomic.LoadPointer(&vp.data)
 	vlp := (*ifaceWords)(unsafe.Pointer(&val))
 	vlp.typ = typ
