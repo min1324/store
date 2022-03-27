@@ -15,6 +15,8 @@ import (
 	"unsafe"
 )
 
+type any = interface{}
+
 type entry struct {
 	store.Entry
 }

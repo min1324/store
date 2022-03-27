@@ -11,6 +11,8 @@ type Entry struct {
 	p unsafe.Pointer
 }
 
+type any = interface{}
+
 // Load returns the value set by the most recent Store.
 func (e *Entry) Load() (val any) {
 	p := atomic.LoadPointer(&e.p)
