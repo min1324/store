@@ -4,6 +4,7 @@ package store_test
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 import (
+	"fmt"
 	"math/rand"
 	"runtime"
 	"store"
@@ -14,13 +15,30 @@ import (
 	"unsafe"
 )
 
+type entry struct {
+	store.Entry
+}
+
 type ifaceWords struct {
 	typ  unsafe.Pointer
 	data unsafe.Pointer
 }
 
+type iface interface {
+	Load() (val any)
+	Store(val any)
+	Swap(new any) (old any)
+	CompareAndSwap(old, new any) (swapped bool)
+}
+
+var gotwant = "%+s wrong value: got %+v, want %+v\n"
+
+func fmtfn(name string, got, want any) string {
+	return fmt.Sprintf(gotwant, name, got, want)
+}
+
 func TestValue(t *testing.T) {
-	var v store.Entry
+	var v entry
 	if v.Load() != nil {
 		t.Fatal("initial Value is not nil")
 	}
@@ -46,54 +64,6 @@ func TestValue(t *testing.T) {
 	}
 }
 
-func TestValueLarge(t *testing.T) {
-	var v store.Entry
-	v.Store("foo")
-	x := v.Load()
-	if xx, ok := x.(string); !ok || xx != "foo" {
-		t.Fatalf("wrong value: got %+v, want foo", x)
-	}
-	v.Store("barbaz")
-	x = v.Load()
-	if xx, ok := x.(string); !ok || xx != "barbaz" {
-		t.Fatalf("wrong value: got %+v, want barbaz", x)
-	}
-}
-
-func TestValuePanic(t *testing.T) {
-	const nilErr = "sync/atomic: store of nil value into Value"
-	const badErr = "sync/atomic: store of inconsistently typed value into Value"
-	var v store.Entry
-	func() {
-		defer func() {
-			err := recover()
-			if err != nil {
-				t.Fatalf("inconsistent store panic: got '%v', want '%v'", err, nilErr)
-			}
-		}()
-		v.Store(nil)
-	}()
-	v.Store(42)
-	func() {
-		defer func() {
-			err := recover()
-			if err != nil {
-				t.Fatalf("inconsistent store panic: got '%v', want '%v'", err, badErr)
-			}
-		}()
-		v.Store("foo")
-	}()
-	func() {
-		defer func() {
-			err := recover()
-			if err != nil {
-				t.Fatalf("inconsistent store panic: got '%v', want '%v'", err, nilErr)
-			}
-		}()
-		v.Store(nil)
-	}()
-}
-
 func TestValueConcurrent(t *testing.T) {
 	tests := [][]any{
 		{uint16(0), ^uint16(0), uint16(1 + 2<<8), uint16(3 + 4<<8)},
@@ -108,7 +78,7 @@ func TestValueConcurrent(t *testing.T) {
 		N = 1e3
 	}
 	for _, test := range tests {
-		var v store.Entry
+		var v entry
 		done := make(chan bool, p)
 		for i := 0; i < p; i++ {
 			go func() {
@@ -139,63 +109,53 @@ func TestValueConcurrent(t *testing.T) {
 	}
 }
 
-func BenchmarkValueRead(b *testing.B) {
-	var v store.Entry
-	v.Store(new(int))
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			x := v.Load().(*int)
-			if *x != 0 {
-				b.Fatalf("wrong value: got %v, want 0", *x)
-			}
-		}
-	})
-}
-
 var Value_SwapTests = []struct {
 	init any
 	new  any
 	want any
 	err  any
 }{
-	{init: nil, new: true, want: nil, err: nil},
-	{init: true, new: false, want: true, err: nil},
+	{init: nil, new: "asd", want: nil},
+	{init: nil, new: true, want: nil},
+	{init: nil, new: nil, want: nil},
+	{init: true, new: nil, want: true},
+	{init: true, new: false, want: true},
+	{init: true, new: true, want: true},
+	{init: false, new: true, want: false},
 }
 
 func TestValue_Swap(t *testing.T) {
 	for i, tt := range Value_SwapTests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var v store.Entry
+			var v entry
 			if tt.init != nil {
 				v.Store(tt.init)
 			}
 			defer func() {
 				err := recover()
 				switch {
-				case tt.err == nil && err != nil:
-					t.Errorf("should not panic, got %v", err)
-				case tt.err != nil && err == nil:
-					t.Errorf("should panic %v, got <nil>", tt.err)
+				case err != nil:
+					t.Errorf(" should not panic, got %v", err)
 				}
 			}()
 			if got := v.Swap(tt.new); got != tt.want {
-				t.Errorf("got %v, want %v", got, tt.want)
+				t.Errorf(fmtfn(" Swap ", got, tt.want), tt.init)
 			}
 			if got := v.Load(); got != tt.new {
-				t.Errorf("got %v, want %v", got, tt.new)
+				t.Errorf(fmtfn(" load ", got, tt.new), tt.init)
 			}
 		})
 	}
 }
 
 func TestValueSwapConcurrent(t *testing.T) {
-	var v store.Entry
+	var v entry
 	var count uint64
 	var g sync.WaitGroup
-	var m, n uint64 = 1000, 1000
+	var m, n uint64 = 100, 100
 	if testing.Short() {
-		m = 100
-		n = 100
+		m = 10
+		n = 10
 	}
 	for i := uint64(0); i < m*n; i += n {
 		i := i
@@ -224,45 +184,54 @@ var Value_CompareAndSwapTests = []struct {
 	new  any
 	old  any
 	want bool
-	err  any
 }{
-	{init: nil, new: nil, old: nil, want: true, err: nil},
-	{init: nil, new: true, old: "", want: false, err: nil},
-	{init: nil, new: true, old: true, want: false, err: nil},
-	{init: nil, new: true, old: nil, want: true, err: nil},
-	{init: true, new: "", want: false, err: nil},
-	{init: true, new: true, old: false, want: false, err: nil},
-	{init: true, new: true, old: true, want: true, err: nil},
-	{init: 2, new: int64(2), old: 2, want: true, err: nil},
-	{init: 2, new: 2, old: int64(2), want: false, err: nil},
-	{init: heapA, new: struct{ uint }{1}, old: heapB, want: true, err: nil},
+	{init: nil, old: nil, new: nil, want: true},
+	{init: nil, old: "", new: true, want: false},
+	{init: nil, old: true, new: true, want: false},
+	{init: nil, old: nil, new: true, want: true},
+	{init: nil, old: 0, new: 0, want: false},
+	{init: 0, old: 0, new: 0, want: true},
+	{init: true, old: nil, new: "", want: false},
+	{init: true, old: false, new: true, want: false},
+	{init: true, old: true, new: true, want: true},
+	{init: true, old: true, new: nil, want: true},
+	{init: 2, old: 2, new: int64(2), want: true},
+	{init: 2, old: int64(2), new: 2, want: false},
+	{init: heapA, old: heapB, new: struct{ uint }{1}, want: true},
+}
+
+func Example_compareAndSwap() {
+	for _, tt := range Value_CompareAndSwapTests {
+		var v entry
+		v.Store(tt.init)
+		if got := v.CompareAndSwap(tt.old, tt.new); got != tt.want {
+			fmt.Printf("err got:%v,want:%v,init:%v,old:%v,new:%v\n", got, tt.want, tt.init, tt.old, tt.new)
+		}
+	}
+	// OutPut:
 }
 
 func TestValue_CompareAndSwap(t *testing.T) {
-	for i, tt := range Value_CompareAndSwapTests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var v store.Entry
-			if tt.init != nil {
-				v.Store(tt.init)
+	for _, tt := range Value_CompareAndSwapTests {
+		var v entry
+		if tt.init != nil {
+			v.Store(tt.init)
+		}
+		defer func() {
+			err := recover()
+			switch {
+			case err != nil:
+				t.Errorf(" got %v, wanted no panic", err)
 			}
-			defer func() {
-				err := recover()
-				switch {
-				case tt.err == nil && err != nil:
-					t.Errorf("got %v, wanted no panic", err)
-				case tt.err != nil && err == nil:
-					t.Errorf("did not panic, want %v", tt.err)
-				}
-			}()
-			if got := v.CompareAndSwap(tt.old, tt.new); got != tt.want {
-				t.Errorf("got %v, want %v", got, tt.want)
-			}
-		})
+		}()
+		if got := v.CompareAndSwap(tt.old, tt.new); got != tt.want {
+			t.Errorf(fmtfn("", got, tt.want))
+		}
 	}
 }
 
 func TestValueCompareAndSwapConcurrent(t *testing.T) {
-	var v store.Entry
+	var v entry
 	var w sync.WaitGroup
 	v.Store(0)
 	m, n := 100, 100
@@ -284,6 +253,6 @@ func TestValueCompareAndSwapConcurrent(t *testing.T) {
 	}
 	w.Wait()
 	if stop := v.Load().(int); stop != m*n {
-		t.Errorf("did not get to %v, stopped at %v", m*n, stop)
+		t.Errorf(" did not get to %v, stopped at %v", m*n, stop)
 	}
 }
