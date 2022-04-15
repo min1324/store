@@ -20,6 +20,11 @@ func ptr2any(p unsafe.Pointer) any {
 	return *(*any)(p)
 }
 
+// Ptr returns e.p value as a unsafe.Ptr.
+func (e *Entry) Ptr() (p unsafe.Pointer) {
+	return e.p
+}
+
 // Load returns the value set by the most recent Store.
 func (e *Entry) Load() (val any) {
 	return ptr2any(atomic.LoadPointer(&e.p))
