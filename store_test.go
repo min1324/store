@@ -33,10 +33,8 @@ type iface interface {
 	CompareAndSwap(old, new any) (swapped bool)
 }
 
-var gotwant = "%+s wrong value: got %+v, want %+v\n"
-
 func fmtfn(name string, got, want any) string {
-	return fmt.Sprintf(gotwant, name, got, want)
+	return fmt.Sprintf("%+s wrong value: got %+v, want %+v\n", name, got, want)
 }
 
 func newFactor(f func(name string, e iface)) {
@@ -144,9 +142,7 @@ func TestValue_Swap(t *testing.T) {
 	newFactor(func(name string, v iface) {
 		for i, tt := range Value_SwapTests {
 			t.Run(strconv.Itoa(i), func(t *testing.T) {
-				if tt.init != nil {
-					v.Store(tt.init)
-				}
+				v.Store(tt.init)
 				defer func() {
 					err := recover()
 					switch {
@@ -155,10 +151,10 @@ func TestValue_Swap(t *testing.T) {
 					}
 				}()
 				if got := v.Swap(tt.new); got != tt.want {
-					t.Errorf(fmtfn(" Swap ", got, tt.want), tt.init)
+					t.Error(fmtfn(name+" Swap ", got, tt.want))
 				}
 				if got := v.Load(); got != tt.new {
-					t.Errorf(fmtfn(" load ", got, tt.new), tt.init)
+					t.Error(fmtfn(name+" load ", got, tt.want))
 				}
 			})
 		}
@@ -221,9 +217,7 @@ var Value_CompareAndSwapTests = []struct {
 func Example_compareAndSwap() {
 	newFactor(func(name string, v iface) {
 		for _, tt := range Value_CompareAndSwapTests {
-			if tt.init != nil {
-				v.Store(tt.init)
-			}
+			v.Store(tt.init)
 			if got := v.CompareAndSwap(tt.old, tt.new); got != tt.want {
 				fmt.Printf("err got:%v,want:%v,init:%v,old:%v,new:%v\n", got, tt.want, tt.init, tt.old, tt.new)
 			}
