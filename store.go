@@ -20,9 +20,10 @@ func ptr2any(p unsafe.Pointer) any {
 	return *(*any)(p)
 }
 
-// Ptr returns e.p value as a unsafe.Ptr.
+// Ptr returns LoadPointer(&e.p) as a unsafe.Ptr,
+// so that can use atomic.CompareAndSwapPointer.
 func (e *Entry) Ptr() (p unsafe.Pointer) {
-	return e.p
+	return atomic.LoadPointer(&e.p)
 }
 
 // Load returns the value set by the most recent Store.
@@ -53,9 +54,3 @@ func (e *Entry) CompareAndSwap(old, new any) (swapped bool) {
 		}
 	}
 }
-
-// //go:linkname runtime_procPin runtime.procPin
-// func runtime_procPin()
-
-// //go:linkname runtime_procUnpin runtime.procUnpin
-// func runtime_procUnpin()
