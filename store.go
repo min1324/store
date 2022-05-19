@@ -11,6 +11,7 @@ type Entry struct {
 	p unsafe.Pointer
 }
 
+// any is an alias for interface{} and is equivalent to interface{} in all ways.
 type any = interface{}
 
 func ptr2any(p unsafe.Pointer) any {
@@ -44,13 +45,9 @@ func (e *Entry) Swap(new any) (old any) {
 
 // CompareAndSwap executes the compare-and-swap operation for the Value.
 func (e *Entry) CompareAndSwap(old, new any) (swapped bool) {
-	for {
-		p := atomic.LoadPointer(&e.p)
-		if ptr2any(p) != old {
-			return false
-		}
-		if atomic.CompareAndSwapPointer(&e.p, p, unsafe.Pointer(&new)) {
-			return true
-		}
+	p := atomic.LoadPointer(&e.p)
+	if ptr2any(p) != old {
+		return false
 	}
+	return atomic.CompareAndSwapPointer(&e.p, p, unsafe.Pointer(&new))
 }
