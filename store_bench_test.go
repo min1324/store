@@ -13,8 +13,8 @@ func benchFunc(f func(name string, e iface)) {
 		name string
 	}{
 		{&atomic.Value{}, "atomic"},
-		{&store.Entry{}, "Node"},
-		{&store.Any{}, "Any"},
+		{&store.Value{}, "store"},
+		// {&store.Any{}, "Any"},
 	} {
 		f(v.name, v.iface)
 	}

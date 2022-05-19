@@ -17,10 +17,6 @@ import (
 
 type any = interface{}
 
-type entry struct {
-	store.Entry
-}
-
 type ifaceWords struct {
 	typ  unsafe.Pointer
 	data unsafe.Pointer
@@ -42,8 +38,8 @@ func newFactor(f func(name string, e iface)) {
 		iface
 		name string
 	}{
-		{iface: &store.Entry{}, name: "Entry"},
-		{iface: &store.Any{}, name: "Any"},
+		{iface: &store.Value{}, name: "store"},
+		// {iface: &store.Any{}, name: "Any"},
 	} {
 		f(v.name, v.iface)
 	}
@@ -212,18 +208,6 @@ var Value_CompareAndSwapTests = []struct {
 	{init: 2, old: 2, new: int64(2), want: true},
 	{init: 2, old: int64(2), new: 2, want: false},
 	{init: heapA, old: heapB, new: struct{ uint }{1}, want: true},
-}
-
-func Example_compareAndSwap() {
-	newFactor(func(name string, v iface) {
-		for _, tt := range Value_CompareAndSwapTests {
-			v.Store(tt.init)
-			if got := v.CompareAndSwap(tt.old, tt.new); got != tt.want {
-				fmt.Printf("err got:%v,want:%v,init:%v,old:%v,new:%v\n", got, tt.want, tt.init, tt.old, tt.new)
-			}
-		}
-	})
-	// OutPut:
 }
 
 func TestValue_CompareAndSwap(t *testing.T) {
