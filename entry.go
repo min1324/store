@@ -18,10 +18,9 @@ func ptr2any(p unsafe.Pointer) any {
 	return *(*any)(p)
 }
 
-// Ptr returns LoadPointer(&e.p) as a unsafe.Ptr,
-// so that can use atomic.CompareAndSwapPointer.
+// Ptr returns entry pointer
 func (e *Entry) Ptr() (p unsafe.Pointer) {
-	return atomic.LoadPointer(&e.p)
+	return e.p
 }
 
 // Load returns the value set by the most recent Store.
