@@ -13,14 +13,14 @@ func benchFunc(f func(name string, e iface)) {
 		name string
 	}{
 		{&atomic.Value{}, "atomic"},
-		{&store.Value{}, "store"},
-		// {&store.Any{}, "Any"},
+		{&store.Value{}, "Entry"},
+		{&store.Entry{}, "store"},
 	} {
 		f(v.name, v.iface)
 	}
 }
 
-func BenchmarkValueRead(b *testing.B) {
+func BenchmarkRead(b *testing.B) {
 	benchFunc(func(name string, v iface) {
 		v.Store(0)
 		b.Run(fmt.Sprintf("%s", name), func(b *testing.B) {

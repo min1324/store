@@ -4,7 +4,6 @@ package store_test
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 import (
-	"fmt"
 	"math/rand"
 	"runtime"
 	"store"
@@ -15,37 +14,17 @@ import (
 	"unsafe"
 )
 
-type any = interface{}
-
-type ifaceWords struct {
-	typ  unsafe.Pointer
-	data unsafe.Pointer
-}
-
-type iface interface {
-	Load() (val any)
-	Store(val any)
-	Swap(new any) (old any)
-	CompareAndSwap(old, new any) (swapped bool)
-}
-
-func fmtfn(name string, got, want any) string {
-	return fmt.Sprintf("%+s wrong value: got %+v, want %+v\n", name, got, want)
-}
-
-func newFactor(f func(name string, e iface)) {
-	for _, v := range []struct {
-		iface
-		name string
-	}{
-		{iface: &store.Value{}, name: "store"},
-		// {iface: &store.Any{}, name: "Any"},
-	} {
-		f(v.name, v.iface)
+func TestPtr(t *testing.T) {
+	var e store.Entry
+	e.Store(1)
+	p := e.Ptr()
+	q := *(*any)(p)
+	if xx := q.(int); xx != 1 {
+		t.Fatalf("wrong value ptr: got %+v, want %v", xx, 1)
 	}
 }
 
-func TestValue(t *testing.T) {
+func TestInit(t *testing.T) {
 	newFactor(func(name string, v iface) {
 		if v.Load() != nil {
 			t.Fatal(name + "initial Value is not nil")
@@ -53,27 +32,27 @@ func TestValue(t *testing.T) {
 
 		v.Store(nil)
 		if xx := v.Load(); xx != nil {
-			t.Fatalf("%s wrong value nil: got %v, want nil", name, xx)
+			t.Fatal(fmtfn("store nil", xx, nil))
 		}
 		var valueNil = unsafe.Pointer(new(interface{}))
 		v.Store(valueNil)
 		if xx := v.Load(); xx != valueNil {
-			t.Fatalf("wrong value vnil: got %+v, want %v", xx, valueNil)
+			t.Fatal(fmtfn("store vnil", xx, valueNil))
 		}
 		v.Store(42)
 		x := v.Load()
 		if xx, ok := x.(int); !ok || xx != 42 {
-			t.Fatalf("wrong value: got %+v, want 42", x)
+			t.Fatal(fmtfn("load", xx, 42))
 		}
 		v.Store(int64(84))
 		x = v.Load()
 		if xx, ok := x.(int64); !ok || xx != 84 {
-			t.Fatalf("wrong value: got %+v, want 84", x)
+			t.Fatal(fmtfn("load", xx, 84))
 		}
 	})
 }
 
-func TestValueConcurrent(t *testing.T) {
+func TestConcurrent(t *testing.T) {
 	tests := [][]any{
 		{uint16(0), ^uint16(0), uint16(1 + 2<<8), uint16(3 + 4<<8)},
 		{uint32(0), ^uint32(0), uint32(1 + 2<<16), uint32(3 + 4<<16)},
@@ -134,7 +113,7 @@ var Value_SwapTests = []struct {
 	{init: false, new: true, want: false},
 }
 
-func TestValue_Swap(t *testing.T) {
+func Test_Swap(t *testing.T) {
 	newFactor(func(name string, v iface) {
 		for i, tt := range Value_SwapTests {
 			t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -157,7 +136,7 @@ func TestValue_Swap(t *testing.T) {
 	})
 }
 
-func TestValueSwapConcurrent(t *testing.T) {
+func TestSwapConcurrent(t *testing.T) {
 	newFactor(func(name string, v iface) {
 		var count uint64
 		var g sync.WaitGroup
@@ -189,7 +168,7 @@ func TestValueSwapConcurrent(t *testing.T) {
 
 var heapA, heapB = struct{ uint }{0}, struct{ uint }{0}
 
-var Value_CompareAndSwapTests = []struct {
+var _CompareAndSwapTests = []struct {
 	init any
 	new  any
 	old  any
@@ -210,9 +189,9 @@ var Value_CompareAndSwapTests = []struct {
 	{init: heapA, old: heapB, new: struct{ uint }{1}, want: true},
 }
 
-func TestValue_CompareAndSwap(t *testing.T) {
+func Test_CompareAndSwap(t *testing.T) {
 	newFactor(func(name string, v iface) {
-		for _, tt := range Value_CompareAndSwapTests {
+		for _, tt := range _CompareAndSwapTests {
 			if tt.init != nil {
 				v.Store(tt.init)
 			}
@@ -230,7 +209,7 @@ func TestValue_CompareAndSwap(t *testing.T) {
 	})
 }
 
-func TestValueCompareAndSwapConcurrent(t *testing.T) {
+func TestCompareAndSwapConcurrent(t *testing.T) {
 	newFactor(func(name string, v iface) {
 		var w sync.WaitGroup
 		v.Store(0)
