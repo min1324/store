@@ -1,8 +1,5 @@
 package store
 
-// any is an alias for interface{} and is equivalent to interface{} in all ways.
-type any = interface{}
-
 // Interface store interface
 type Interface interface {
 	// Load returns the Any set by the most recent Store.

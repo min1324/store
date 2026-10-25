@@ -13,8 +13,8 @@ func benchFunc(f func(name string, e iface)) {
 		name string
 	}{
 		{&atomic.Value{}, "atomic"},
-		{&store.Value{}, "Entry"},
-		{&store.Entry{}, "store"},
+		{&store.Value{}, "Value"},
+		{&store.Entry{}, "Entry"},
 	} {
 		f(v.name, v.iface)
 	}
@@ -24,6 +24,7 @@ func BenchmarkRead(b *testing.B) {
 	benchFunc(func(name string, v iface) {
 		v.Store(0)
 		b.Run(fmt.Sprintf("%s", name), func(b *testing.B) {
+			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
 					x := v.Load().(int)
@@ -41,6 +42,7 @@ func BenchmarkValueStore(b *testing.B) {
 	benchFunc(func(name string, v iface) {
 		v.Store(0)
 		b.Run(fmt.Sprintf("%s", name), func(b *testing.B) {
+			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {
 				i := 0
 				for pb.Next() {
@@ -56,6 +58,7 @@ func BenchmarkValueStoreLoad(b *testing.B) {
 	benchFunc(func(name string, v iface) {
 		v.Store(0)
 		b.Run(fmt.Sprintf("%s", name), func(b *testing.B) {
+			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {
 				var i = 0
 				for pb.Next() {
@@ -73,7 +76,9 @@ func BenchmarkValueStoreLoad(b *testing.B) {
 func BenchmarkValueSwap(b *testing.B) {
 	benchFunc(func(name string, v iface) {
 		var i int64
+
 		b.Run(fmt.Sprintf("%s", name), func(b *testing.B) {
+			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
 					v.Swap(atomic.AddInt64(&i, 1))
@@ -87,6 +92,7 @@ func BenchmarkValueCAS(b *testing.B) {
 	benchFunc(func(name string, v iface) {
 		v.Store(0)
 		b.Run(fmt.Sprintf("%s", name), func(b *testing.B) {
+			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
 					j := v.Load().(int)

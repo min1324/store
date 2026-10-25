@@ -17,6 +17,8 @@ type ifaceWords struct {
 	data unsafe.Pointer
 }
 
+var firstStoreInProgress byte
+
 // wrap nil value in entry
 var empty = unsafe.Pointer(new(any))
 
@@ -24,22 +26,20 @@ var empty = unsafe.Pointer(new(any))
 // It returns nil if there has been no call to Store for this Any.
 func (s *Value) Load() (val any) {
 	vp := (*ifaceWords)(unsafe.Pointer(s))
-	for {
-		typ := atomic.LoadPointer(&vp.typ)
-		if typ == nil || typ == unsafe.Pointer(&empty) {
-			// First store not yet completed.
-			return nil
-		}
-		data := atomic.LoadPointer(&vp.data)
-		if data == empty {
-			return nil
-		}
-		// return *(*any)(unsafe.Pointer(&ifaceWords{typ: typ, data: data}))
-		vlp := (*ifaceWords)(unsafe.Pointer(&val))
-		vlp.typ = typ
-		vlp.data = data
-		return
+	typ := atomic.LoadPointer(&vp.typ)
+	if typ == nil || typ == unsafe.Pointer(&firstStoreInProgress) {
+		// First store not yet completed.
+		return nil
 	}
+	data := atomic.LoadPointer(&vp.data)
+	if data == empty {
+		return nil
+	}
+	// return *(*any)(unsafe.Pointer(&ifaceWords{typ: typ, data: data}))
+	vlp := (*ifaceWords)(unsafe.Pointer(&val))
+	vlp.typ = typ
+	vlp.data = data
+	return
 }
 
 // Store sets the Any of the Any to x.
@@ -59,7 +59,7 @@ func (s *Value) Store(val any) {
 				return
 			}
 			runtime_procPin()
-			if !atomic.CompareAndSwapPointer(&vp.typ, nil, unsafe.Pointer(&empty)) {
+			if !atomic.CompareAndSwapPointer(&vp.typ, nil, unsafe.Pointer(&firstStoreInProgress)) {
 				runtime_procUnpin()
 				continue
 			}
@@ -69,12 +69,12 @@ func (s *Value) Store(val any) {
 			runtime_procUnpin()
 			return
 		}
-		if typ == empty {
+		if typ == unsafe.Pointer(&firstStoreInProgress) {
 			continue
 		}
 		if val == nil {
 			// wrap nil value
-			vlp.typ = atomic.LoadPointer(&vp.typ)
+			vlp.typ = typ
 			vlp.data = empty
 		}
 		// First store completed. Check type and overwrite data.
@@ -105,7 +105,7 @@ func (s *Value) Swap(new any) (old any) {
 			// active spin wait to wait for completion; and so that
 			// GC does not see the fake type accidentally.
 			runtime_procPin()
-			if !atomic.CompareAndSwapPointer(&vp.typ, nil, unsafe.Pointer(^uintptr(0))) {
+			if !atomic.CompareAndSwapPointer(&vp.typ, nil, unsafe.Pointer(&firstStoreInProgress)) {
 				runtime_procUnpin()
 				continue
 			}
@@ -115,12 +115,12 @@ func (s *Value) Swap(new any) (old any) {
 			runtime_procUnpin()
 			return nil
 		}
-		if uintptr(typ) == ^uintptr(0) {
+		if typ == unsafe.Pointer(&firstStoreInProgress) {
 			continue
 		}
 		if new == nil {
 			// wrap nil value
-			np.typ = atomic.LoadPointer(&vp.typ)
+			np.typ = typ
 			np.data = empty
 		}
 		// First store completed. Check type and overwrite data.
@@ -132,9 +132,11 @@ func (s *Value) Swap(new any) (old any) {
 		if data == empty {
 			return nil
 		}
-		op := (*ifaceWords)(unsafe.Pointer(&old))
-		op.typ, op.data = typ, data
-		return old
+		ol := ifaceWords{typ: typ, data: data}
+		return *(*any)(unsafe.Pointer(&ol))
+		// op := (*ifaceWords)(unsafe.Pointer(&old))
+		// op.typ, op.data = typ, data
+		// return old
 	}
 }
 
@@ -170,7 +172,7 @@ func (s *Value) CompareAndSwap(old, new any) (swapped bool) {
 			// active spin wait to wait for completion; and so that
 			// GC does not see the fake type accidentally.
 			runtime_procPin()
-			if !atomic.CompareAndSwapPointer(&vp.typ, nil, unsafe.Pointer(^uintptr(0))) {
+			if !atomic.CompareAndSwapPointer(&vp.typ, nil, unsafe.Pointer(&firstStoreInProgress)) {
 				runtime_procUnpin()
 				continue
 			}
@@ -180,19 +182,20 @@ func (s *Value) CompareAndSwap(old, new any) (swapped bool) {
 			runtime_procUnpin()
 			return true
 		}
-		if uintptr(typ) == ^uintptr(0) {
+		if typ == unsafe.Pointer(&firstStoreInProgress) {
 			continue
 		}
 		// First store completed. Check type and overwrite data.
 		if typ != np.typ {
+			// return false
 			panic("store: compare and swap of inconsistently typed value into Value")
 		}
 
 		data := atomic.LoadPointer(&vp.data)
-		var i = *(*any)(unsafe.Pointer(&ifaceWords{typ: typ, data: data}))
-		// var i any
-		// (*ifaceWords)(unsafe.Pointer(&i)).typ = typ
-		// (*ifaceWords)(unsafe.Pointer(&i)).data = data
+		// var i = *(*any)(unsafe.Pointer(&ifaceWords{typ: typ, data: data}))
+		var i any
+		(*ifaceWords)(unsafe.Pointer(&i)).typ = typ
+		(*ifaceWords)(unsafe.Pointer(&i)).data = data
 		if i != old {
 			return false
 		}
@@ -201,6 +204,7 @@ func (s *Value) CompareAndSwap(old, new any) (swapped bool) {
 }
 
 // Disable/enable preemption, implemented in runtime.
+//
 //go:linkname runtime_procPin runtime.procPin
 func runtime_procPin() int
 
