@@ -65,6 +65,7 @@ func (e *Entry) Store(val any) {
 
 // Swap 原子地交换 Entry 中的值并返回旧值
 // 如果 Entry 未被初始化，则返回 nil。
+// LoadAndStore
 //
 // 参数：
 //   - new: 要存储的新值
@@ -136,6 +137,7 @@ func (e *Entry) LoadOrStore(val any) (actual any, loaded bool) {
 		if p != nil {
 			return ptr2any(p), true
 		}
+		// p == nil,entry is empty
 		newPtr := any2ptr(val)
 		if atomic.CompareAndSwapPointer(&e.p, nil, newPtr) {
 			return val, false

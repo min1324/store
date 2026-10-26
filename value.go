@@ -5,10 +5,21 @@ import (
 	"unsafe"
 )
 
-// A Value provides an atomic load and store of the same type value.
-// it can store nil value.
-type Value struct {
-	data any
+func init() {
+	verifyEfaceLayout()
+}
+
+func verifyEfaceLayout() {
+	var val any = int(42)
+	ep := (*ifaceWords)(unsafe.Pointer(&val))
+	if ep.typ == nil || ep.data == nil {
+		panic("queue: eface layout does not match runtime interface layout")
+	}
+	var nilVal any
+	nilEp := (*ifaceWords)(unsafe.Pointer(&nilVal))
+	if nilEp.typ != nil || nilEp.data != nil {
+		panic("queue: eface layout does not match runtime nil interface layout")
+	}
 }
 
 // ifaceWords is interface{} internal representation.
@@ -21,6 +32,14 @@ var firstStoreInProgress byte
 
 // wrap nil value in entry
 var empty = unsafe.Pointer(new(any))
+
+// =============================================  Value  ============================================
+
+// Value is a shared variable that can be safely read and written from multiple goroutines.
+// 存一次后，只能存相同类型的值
+type Value struct {
+	data any
+}
 
 // Load returns the Any set by the most recent Store.
 // It returns nil if there has been no call to Store for this Any.
@@ -79,7 +98,7 @@ func (s *Value) Store(val any) {
 		}
 		// First store completed. Check type and overwrite data.
 		if typ != vlp.typ {
-			panic("store: store of inconsistently typed value into Value")
+			panic("store: Store of inconsistently typed value into Value")
 		}
 		atomic.StorePointer(&vp.data, vlp.data)
 		return
@@ -125,7 +144,7 @@ func (s *Value) Swap(new any) (old any) {
 		}
 		// First store completed. Check type and overwrite data.
 		if typ != np.typ {
-			panic("store: swap of inconsistently typed value into Value")
+			panic("store: Swap of inconsistently typed value into Value")
 		}
 		// Complete first store.
 		data := atomic.SwapPointer(&vp.data, np.data)
@@ -155,7 +174,7 @@ func (s *Value) CompareAndSwap(old, new any) (swapped bool) {
 		np.data = empty
 	}
 	if op.typ != nil && np.typ != op.typ {
-		panic("store: compare and swap of inconsistently typed values")
+		panic("store: CompareAndSwap of inconsistently typed values")
 	}
 	for {
 		typ := atomic.LoadPointer(&vp.typ)
@@ -188,7 +207,7 @@ func (s *Value) CompareAndSwap(old, new any) (swapped bool) {
 		// First store completed. Check type and overwrite data.
 		if typ != np.typ {
 			// return false
-			panic("store: compare and swap of inconsistently typed value into Value")
+			panic("store: CompareAndSwap of inconsistently typed value into Value")
 		}
 
 		data := atomic.LoadPointer(&vp.data)
@@ -200,6 +219,64 @@ func (s *Value) CompareAndSwap(old, new any) (swapped bool) {
 			return false
 		}
 		return atomic.CompareAndSwapPointer(&vp.data, data, np.data)
+	}
+}
+
+// TryLoad 尝试加载值，如果未初始化则返回 false
+//
+// 返回：
+//   - val: 当前存储的值，如果未初始化则为 nil
+//   - loaded: 已经读取到当前值,为false时，表示未初始化
+func (s *Value) TryLoad() (val any, loaded bool) {
+	vp := (*ifaceWords)(unsafe.Pointer(s))
+	typ := atomic.LoadPointer(&vp.typ)
+	if typ == nil || typ == unsafe.Pointer(&firstStoreInProgress) {
+		// First store not yet completed.
+		return nil, false
+	}
+	data := atomic.LoadPointer(&vp.data)
+	if data == empty {
+		return nil, true
+	}
+	// return *(*any)(unsafe.Pointer(&ifaceWords{typ: typ, data: data}))
+	vlp := (*ifaceWords)(unsafe.Pointer(&val))
+	vlp.typ = typ
+	vlp.data = data
+	return val, true
+}
+
+// TryStore 尝试存储值，如果已存在则返回 false
+//
+// 参数：
+//   - val: 要存储的值
+//
+// 返回：
+//   - true 如果存储成功，false 如果已存在
+func (s *Value) TryStore(val any) (ok bool) {
+	_, ok = s.TryLoad()
+	if ok {
+		return false
+	}
+	return s.CompareAndSwap(nil, val)
+}
+
+// LoadOrStore 获取当前值，如果未初始化则存储新值并返回
+//
+// 参数：
+//   - val: 如果未初始化则存储的值
+//
+// 返回：
+//   - actual: 实际存储的值
+//   - loaded: 如果值已存在则为 true，否则为 false
+func (s *Value) LoadOrStore(val any) (actual any, loaded bool) {
+	for {
+		p, ok := s.TryLoad()
+		if ok {
+			return p, true
+		}
+		if s.CompareAndSwap(nil, val) {
+			return val, false
+		}
 	}
 }
 
