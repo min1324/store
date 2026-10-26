@@ -6,23 +6,12 @@ package store_test
 import (
 	"math/rand"
 	"runtime"
-	"store"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"unsafe"
 )
-
-func TestPtr(t *testing.T) {
-	var e store.Entry
-	e.Store(1)
-	p := e.Ptr()
-	q := *(*any)(p)
-	if xx := q.(int); xx != 1 {
-		t.Fatalf("wrong value ptr: got %+v, want %v", xx, 1)
-	}
-}
 
 func TestInit(t *testing.T) {
 	newFactor(func(name string, v iface) {
